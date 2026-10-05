@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { PenLine, Clock, Lightbulb, Bus } from 'lucide-react'
+import SaveToasts from '@/components/SaveToasts'
 
 const navItems = [
   { to: '/', icon: PenLine, label: '记录' },
@@ -74,6 +75,7 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+      <SaveToasts />
     </div>
   )
 }

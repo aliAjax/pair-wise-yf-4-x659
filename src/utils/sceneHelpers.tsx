@@ -1,9 +1,33 @@
-import type { Weather, TreeDensity, PedestrianStatus } from '@/types'
+import type { Weather, TreeDensity, PedestrianStatus, WindowScene, SceneFormData, EditableField } from '@/types'
+import { EDITABLE_FIELDS } from '@/services/storage'
 import {
   Sun, Cloud, CloudRain, CloudDrizzle, CloudSnow, CloudFog,
   TreePine, TreePine as TreeSparse, Trees,
   PersonStanding, Users,
 } from 'lucide-react'
+
+/**
+ * 以初始快照为基准，只把本次改过的字段打上当前时间戳，
+ * 未改动的字段保留原时间戳。配合字段级合并，
+ * 多标签同时编辑同一条时各自动过的字段都能留下。
+ */
+export function buildUpdatedScene(initial: WindowScene, form: SceneFormData): WindowScene {
+  const now = new Date().toISOString()
+  const fieldUpdatedAt: Partial<Record<EditableField, string>> = {
+    ...(initial.fieldUpdatedAt ?? {}),
+  }
+  for (const f of EDITABLE_FIELDS) {
+    if (form[f] !== initial[f]) {
+      fieldUpdatedAt[f] = now
+    }
+  }
+  return {
+    ...initial,
+    ...form,
+    updatedAt: now,
+    fieldUpdatedAt,
+  }
+}
 
 export function getWeatherIcon(weather: Weather) {
   const map: Record<Weather, React.ReactNode> = {

@@ -1,20 +1,34 @@
 import { useEffect, useState } from 'react'
-import { Search, Route, X, Trash2, Clock, MapPin } from 'lucide-react'
+import { Search, Route, X, Trash2, Clock, MapPin, Pencil } from 'lucide-react'
 import { useSceneStore } from '@/store/useSceneStore'
+import SceneForm from '@/components/SceneForm'
 import {
   formatTimestamp,
   getTimeOfDay,
   getWeatherIcon,
   getTreeIcon,
   getPedestrianIcon,
+  buildUpdatedScene,
 } from '@/utils/sceneHelpers'
-import type { WindowScene } from '@/types'
+import type { WindowScene, SceneFormData } from '@/types'
 
 export default function TimelinePage() {
-  const { routeNames, selectedRoute, currentRouteScenes, selectRoute, loadAll, deleteScene } =
-    useSceneStore()
+  const {
+    routeNames,
+    selectedRoute,
+    currentRouteScenes,
+    selectRoute,
+    loadAll,
+    deleteScene,
+    updateScene,
+    scenes,
+  } = useSceneStore()
   const [search, setSearch] = useState('')
-  const [detailScene, setDetailScene] = useState<WindowScene | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
+  // 编辑会话：初始快照打开时固定，不随后续跨标签更新而变化，
+  // 这样 diff 始终基于打开时的版本，不会把别的标签的改动误判成自己的修改。
+  const [editingInitial, setEditingInitial] = useState<WindowScene | null>(null)
+  const [editForm, setEditForm] = useState<SceneFormData | null>(null)
 
   useEffect(() => {
     loadAll()
@@ -28,9 +42,37 @@ export default function TimelinePage() {
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   )
 
+  // 详情从 store 里按 id 取最新数据，跨标签合并后这里始终是最新
+  const detailScene = detailId ? scenes.find((s) => s.id === detailId) ?? null : null
+
+  const openEdit = (scene: WindowScene) => {
+    setDetailId(null)
+    setEditingInitial(scene)
+    setEditForm({
+      routeName: scene.routeName,
+      segment: scene.segment,
+      seatDirection: scene.seatDirection,
+      weather: scene.weather,
+      signText: scene.signText,
+      treeDensity: scene.treeDensity,
+      pedestrianStatus: scene.pedestrianStatus,
+      note: scene.note,
+    })
+  }
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingInitial || !editForm) return
+    const updated = buildUpdatedScene(editingInitial, editForm)
+    const result = updateScene(updated)
+    if (!result.ok) return // 失败保留表单，全局 Toast 可重试
+    setEditingInitial(null)
+    setEditForm(null)
+  }
+
   const handleDelete = (id: string) => {
     deleteScene(id)
-    setDetailScene(null)
+    setDetailId(null)
   }
 
   return (
@@ -102,7 +144,7 @@ export default function TimelinePage() {
                     </p>
                   </div>
                   <button
-                    onClick={() => setDetailScene(scene)}
+                    onClick={() => setDetailId(scene.id)}
                     className="group flex-1 rounded-xl border border-teal-800 bg-teal-900/50 p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-dusk-400/40 hover:shadow-lg hover:shadow-dusk-400/10"
                   >
                     <div className="flex items-center gap-2 mb-2">
@@ -142,14 +184,14 @@ export default function TimelinePage() {
       {detailScene && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-          onClick={() => setDetailScene(null)}
+          onClick={() => setDetailId(null)}
         >
           <div
             className="relative mx-4 w-full max-w-md animate-scale-in rounded-2xl border border-teal-700 bg-teal-900 p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              onClick={() => setDetailScene(null)}
+              onClick={() => setDetailId(null)}
               className="absolute right-4 top-4 text-mist-400 hover:text-mist-100 transition-colors"
             >
               <X className="w-5 h-5" />
@@ -191,13 +233,61 @@ export default function TimelinePage() {
               )}
             </div>
 
+            <div className="mt-5 flex gap-2">
+              <button
+                onClick={() => openEdit(detailScene)}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-dusk-400/20 py-2.5 text-sm text-dusk-300 transition-colors hover:bg-dusk-400/30"
+              >
+                <Pencil className="w-4 h-4" />
+                编辑此窗景
+              </button>
+              <button
+                onClick={() => handleDelete(detailScene.id)}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-900/40 py-2.5 text-sm text-red-300 transition-colors hover:bg-red-900/60"
+              >
+                <Trash2 className="w-4 h-4" />
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingInitial && editForm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => {
+            setEditingInitial(null)
+            setEditForm(null)
+          }}
+        >
+          <div
+            className="relative mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-teal-700 bg-teal-900 p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
-              onClick={() => handleDelete(detailScene.id)}
-              className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-red-900/40 py-2.5 text-sm text-red-300 transition-colors hover:bg-red-900/60"
+              onClick={() => {
+                setEditingInitial(null)
+                setEditForm(null)
+              }}
+              className="absolute right-4 top-4 text-mist-400 hover:text-mist-100 transition-colors"
             >
-              <Trash2 className="w-4 h-4" />
-              删除此窗景
+              <X className="w-5 h-5" />
             </button>
+
+            <h2 className="mb-5 text-xl font-bold text-dusk-400">编辑窗景</h2>
+
+            <SceneForm
+              value={editForm}
+              onChange={setEditForm}
+              onSubmit={handleEditSubmit}
+              submitLabel="保存修改"
+            >
+              <div className="flex items-center gap-2 text-mist-400 text-xs">
+                <Clock className="w-3 h-3" />
+                <span>记录于 {formatTimestamp(editingInitial.timestamp)}</span>
+              </div>
+            </SceneForm>
           </div>
         </div>
       )}
