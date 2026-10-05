@@ -17,6 +17,10 @@ export interface WindowScene {
   treeDensity: TreeDensity
   pedestrianStatus: PedestrianStatus
   note: string
+  /** 最后一次修改时间。旧数据没有该字段，读取时按可选处理 */
+  updatedAt?: string
+  /** 每个可编辑字段各自的最后修改时间，用于多标签合并。旧数据没有该字段 */
+  fieldUpdatedAt?: Partial<Record<SceneEditableKey, string>>
 }
 
 export interface SceneFormData {
@@ -29,3 +33,16 @@ export interface SceneFormData {
   pedestrianStatus: PedestrianStatus
   note: string
 }
+
+export type SceneEditableKey = keyof SceneFormData
+
+export const SCENE_EDITABLE_KEYS: SceneEditableKey[] = [
+  'routeName',
+  'segment',
+  'seatDirection',
+  'weather',
+  'signText',
+  'treeDensity',
+  'pedestrianStatus',
+  'note',
+]

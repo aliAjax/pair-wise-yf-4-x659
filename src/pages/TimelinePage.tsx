@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Search, Route, X, Trash2, Clock, MapPin } from 'lucide-react'
+import { Search, Route, X, Trash2, Clock, MapPin, Pencil, Check, Undo2 } from 'lucide-react'
 import { useSceneStore } from '@/store/useSceneStore'
+import SceneFormFields from '@/components/SceneFormFields'
 import {
   formatTimestamp,
   getTimeOfDay,
@@ -8,17 +9,32 @@ import {
   getTreeIcon,
   getPedestrianIcon,
 } from '@/utils/sceneHelpers'
-import type { WindowScene } from '@/types'
+import { SCENE_EDITABLE_KEYS } from '@/types'
+import type { SceneFormData } from '@/types'
 
 export default function TimelinePage() {
-  const { routeNames, selectedRoute, currentRouteScenes, selectRoute, loadAll, deleteScene } =
-    useSceneStore()
+  const {
+    scenes,
+    routeNames,
+    selectedRoute,
+    currentRouteScenes,
+    selectRoute,
+    loadAll,
+    deleteScene,
+    updateScene,
+  } = useSceneStore()
   const [search, setSearch] = useState('')
-  const [detailScene, setDetailScene] = useState<WindowScene | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState<SceneFormData | null>(null)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     loadAll()
   }, [loadAll])
+
+  // 按 id 从最新数据里解析，别的标签改动后这里能跟着变；被删了则自动关掉弹窗
+  const detailScene = detailId ? (scenes.find((s) => s.id === detailId) ?? null) : null
 
   const filteredRoutes = routeNames.filter((r) =>
     r.toLowerCase().includes(search.toLowerCase())
@@ -28,10 +44,58 @@ export default function TimelinePage() {
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   )
 
+  const closeDetail = () => {
+    setDetailId(null)
+    setEditing(false)
+    setEditForm(null)
+  }
+
   const handleDelete = (id: string) => {
     deleteScene(id)
-    setDetailScene(null)
+    closeDetail()
   }
+
+  const startEdit = () => {
+    if (!detailScene) return
+    setEditForm({
+      routeName: detailScene.routeName,
+      segment: detailScene.segment,
+      seatDirection: detailScene.seatDirection,
+      weather: detailScene.weather,
+      signText: detailScene.signText,
+      treeDensity: detailScene.treeDensity,
+      pedestrianStatus: detailScene.pedestrianStatus,
+      note: detailScene.note,
+    })
+    setEditing(true)
+  }
+
+  const updateEdit = <K extends keyof SceneFormData>(key: K, val: SceneFormData[K]) =>
+    setEditForm((prev) => (prev ? { ...prev, [key]: val } : prev))
+
+  const handleSaveEdit = async () => {
+    if (!detailScene || !editForm || saving) return
+    // 只把真正改过的字段交出去，合并时才不会冲掉别的标签改的字段
+    const changes: Partial<SceneFormData> = {}
+    for (const key of SCENE_EDITABLE_KEYS) {
+      if (editForm[key] !== detailScene[key]) {
+        ;(changes as Record<typeof key, string>)[key] = editForm[key]
+      }
+    }
+    setSaving(true)
+    if (Object.keys(changes).length > 0) {
+      // 失败时全局横幅会标明是哪条并提供重试，这里照常退出编辑态
+      await updateScene(detailScene.id, changes)
+    }
+    setSaving(false)
+    setEditing(false)
+    setEditForm(null)
+  }
+
+  const wasEdited =
+    detailScene?.updatedAt &&
+    new Date(detailScene.updatedAt).getTime() >
+      new Date(detailScene.timestamp).getTime() + 1000
 
   return (
     <div className="min-h-screen bg-teal-950 font-serif text-mist-100">
@@ -102,7 +166,7 @@ export default function TimelinePage() {
                     </p>
                   </div>
                   <button
-                    onClick={() => setDetailScene(scene)}
+                    onClick={() => setDetailId(scene.id)}
                     className="group flex-1 rounded-xl border border-teal-800 bg-teal-900/50 p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-dusk-400/40 hover:shadow-lg hover:shadow-dusk-400/10"
                   >
                     <div className="flex items-center gap-2 mb-2">
@@ -142,62 +206,109 @@ export default function TimelinePage() {
       {detailScene && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-          onClick={() => setDetailScene(null)}
+          onClick={closeDetail}
         >
           <div
-            className="relative mx-4 w-full max-w-md animate-scale-in rounded-2xl border border-teal-700 bg-teal-900 p-6 shadow-2xl"
+            className="relative mx-4 w-full max-w-md max-h-[85vh] overflow-y-auto animate-scale-in rounded-2xl border border-teal-700 bg-teal-900 p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              onClick={() => setDetailScene(null)}
+              onClick={closeDetail}
               className="absolute right-4 top-4 text-mist-400 hover:text-mist-100 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="mb-4 flex items-center gap-3">
-              {getWeatherIcon(detailScene.weather)}
-              <h2 className="text-xl font-bold text-dusk-400">{detailScene.segment}</h2>
-            </div>
-
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-2 text-mist-300">
-                <MapPin className="w-4 h-4 text-dusk-400" />
-                <span>{detailScene.routeName}</span>
-                <span className="text-teal-600">·</span>
-                <span>{detailScene.seatDirection}侧</span>
-              </div>
-              <div className="flex items-center gap-2 text-mist-300">
-                <Clock className="w-4 h-4 text-dusk-400" />
-                <span>{formatTimestamp(detailScene.timestamp)}</span>
-                <span className="text-teal-600">·</span>
-                <span>{getTimeOfDay(detailScene.timestamp)}</span>
-              </div>
-              <div className="flex items-center gap-3 text-mist-300">
-                {getTreeIcon(detailScene.treeDensity)}
-                <span>{detailScene.treeDensity}</span>
-                {getPedestrianIcon(detailScene.pedestrianStatus)}
-                <span>{detailScene.pedestrianStatus}</span>
-              </div>
-              {detailScene.signText && (
-                <div className="rounded-lg bg-teal-800/50 px-3 py-2 text-mist-200">
-                  招牌: {detailScene.signText}
+            {editing && editForm ? (
+              <>
+                <h2 className="mb-4 text-xl font-bold text-dusk-400">编辑窗景</h2>
+                <div className="space-y-5">
+                  <SceneFormFields form={editForm} onChange={updateEdit} />
                 </div>
-              )}
-              {detailScene.note && (
-                <div className="rounded-lg border border-teal-800 px-3 py-2 text-mist-300">
-                  {detailScene.note}
+                <div className="mt-5 flex gap-3">
+                  <button
+                    onClick={() => {
+                      setEditing(false)
+                      setEditForm(null)
+                    }}
+                    disabled={saving}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-teal-700 py-2.5 text-sm text-mist-300 transition-colors hover:bg-teal-800/60 disabled:opacity-50"
+                  >
+                    <Undo2 className="w-4 h-4" />
+                    取消
+                  </button>
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={saving}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-dusk-400 py-2.5 text-sm font-medium text-teal-950 transition-colors hover:bg-dusk-300 disabled:opacity-50"
+                  >
+                    <Check className="w-4 h-4" />
+                    {saving ? '保存中…' : '保存修改'}
+                  </button>
                 </div>
-              )}
-            </div>
+              </>
+            ) : (
+              <>
+                <div className="mb-4 flex items-center gap-3">
+                  {getWeatherIcon(detailScene.weather)}
+                  <h2 className="text-xl font-bold text-dusk-400">{detailScene.segment}</h2>
+                </div>
 
-            <button
-              onClick={() => handleDelete(detailScene.id)}
-              className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-red-900/40 py-2.5 text-sm text-red-300 transition-colors hover:bg-red-900/60"
-            >
-              <Trash2 className="w-4 h-4" />
-              删除此窗景
-            </button>
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center gap-2 text-mist-300">
+                    <MapPin className="w-4 h-4 text-dusk-400" />
+                    <span>{detailScene.routeName}</span>
+                    <span className="text-teal-600">·</span>
+                    <span>{detailScene.seatDirection}侧</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-mist-300">
+                    <Clock className="w-4 h-4 text-dusk-400" />
+                    <span>{formatTimestamp(detailScene.timestamp)}</span>
+                    <span className="text-teal-600">·</span>
+                    <span>{getTimeOfDay(detailScene.timestamp)}</span>
+                  </div>
+                  {wasEdited && (
+                    <div className="flex items-center gap-2 text-xs text-mist-500">
+                      <Pencil className="w-3 h-3" />
+                      <span>编辑于 {formatTimestamp(detailScene.updatedAt!)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3 text-mist-300">
+                    {getTreeIcon(detailScene.treeDensity)}
+                    <span>{detailScene.treeDensity}</span>
+                    {getPedestrianIcon(detailScene.pedestrianStatus)}
+                    <span>{detailScene.pedestrianStatus}</span>
+                  </div>
+                  {detailScene.signText && (
+                    <div className="rounded-lg bg-teal-800/50 px-3 py-2 text-mist-200">
+                      招牌: {detailScene.signText}
+                    </div>
+                  )}
+                  {detailScene.note && (
+                    <div className="rounded-lg border border-teal-800 px-3 py-2 text-mist-300">
+                      {detailScene.note}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-5 flex gap-3">
+                  <button
+                    onClick={startEdit}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-dusk-400/15 py-2.5 text-sm text-dusk-300 transition-colors hover:bg-dusk-400/25"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    编辑此窗景
+                  </button>
+                  <button
+                    onClick={() => handleDelete(detailScene.id)}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-900/40 py-2.5 text-sm text-red-300 transition-colors hover:bg-red-900/60"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    删除此窗景
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

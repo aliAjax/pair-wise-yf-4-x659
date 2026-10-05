@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { PenLine, Clock, Lightbulb, Bus } from 'lucide-react'
+import FailedSaveBanner from '@/components/FailedSaveBanner'
 
 const navItems = [
   { to: '/', icon: PenLine, label: '记录' },
@@ -74,6 +75,7 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+      <FailedSaveBanner />
     </div>
   )
 }
